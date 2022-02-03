@@ -1,0 +1,709 @@
+---
+title: "Bellabeat Capstone"
+author: "Christian Caredio"
+date: "1/28/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# 1. Overview 
+
+  Bellabeat is a tech company that creats health-focused wearable smart products targeted towards women. These products monitor biometrics and lifestyle data of their users for women to better understand their bodies. This increased understanding will hopefully lead to better lifestyle choices that lead to an overall increase in women's health. With the multitude of products to choose from in unison with the Bellabeat app, women can monitor their activity, sleep, stress, weight, heart health, and hydration levels. The goal of this project is to take a closer look the usage of Bellabeats products to better understand who is using these products and how to improve the overall experience and increase the appeal to new customers. 
+  
+  
+
+# 2. Ask Phase
+
+## Business Task
+
+  With the goal to better understand how consumers use their Bellabeat product, we will analyze the data to answer the following questions:
+  1. What are some trends in smart device usage?
+  2. How could these trends apply to Bellabeat customers?
+  3. How could these trends help influence Bellabeat marketing strategy?
+
+
+# 3. Prepare Phase
+
+## Dataset Used
+
+  To complete this project, the Fitbit Fitness Tracker Data (CC0: Public Domain) dataset made available by Mobius on Kaggle will be used (link: https://www.kaggle.com/arashnic/fitbit). 
+
+## Dataset Information
+  
+  This data was collected over 31 days between 04/12/2016-05/12/2016 from thirty Fitbit users who consented to the submission of their personal device tracker data. There are a total of 18 different dataframes that consist of the overall data, but in this project only three will be used for analysis. This is because many of the different datasets are subsets of larger and more complete data. 
+  There are a few limitations with the data that includes not reporting information on the gender, age, and location of the participants, which are important to provide a better understanding of the consumers. Finally, the sample size and the sample length should be increased in the future as to provide a better understanding of the users as many different independent variables shape health and lifestyle choices. 
+
+
+# 3. Process Phase
+
+  Data processing, manipulation, analysis, and visualization will all be done using R Programming in R Studio.
+
+**Install and load the packages** 
+
+
+```{r load packages, echo=TRUE, message=FALSE, warning=FALSE}
+library('tidyverse')
+library('janitor')
+library('ggplot2')
+library('skimr')
+library('dplyr')
+library('scales')
+library('lubridate')
+```
+
+
+**Load our datasets**
+
+
+
+```{r read_csv, echo=TRUE, message=FALSE, warning=FALSE}
+daily_activity <- read_csv('~/Fitbit Data/Fitabase Data 4.12.16-5.12.16/dailyActivity_merged.csv')
+daily_sleep <- read_csv('~/Fitbit Data/Fitabase Data 4.12.16-5.12.16/sleepDay_merged.csv')
+weight_log <- read_csv('~/Fitbit Data/Fitabase Data 4.12.16-5.12.16/weightloginfo_merged.csv')
+```
+
+
+**Take a look at the data**
+
+
+
+```{r head(data)}
+head(daily_activity,3)
+head(daily_sleep,3)
+head(weight_log,3)
+```
+
+
+**How many unique users are there?**
+
+
+
+```{r Unique Users}
+n_unique(daily_activity$Id)
+n_unique(daily_sleep$Id)
+n_unique(weight_log$Id)
+```
+
+
+**Checking for duplicate data.**
+
+
+
+```{r Duplicte Check}
+sum(duplicated(daily_activity))
+sum(duplicated(daily_sleep))
+sum(duplicated(weight_log))
+```
+
+
+**Checking for na values.**
+
+
+
+```{r Na value check}
+sum(is.na(daily_activity))
+sum(is.na(daily_sleep))
+sum(is.na(weight_log))
+```
+
+
+**Let's take another look at weight_log.**
+
+
+
+```{r head(weight_log), echo=FALSE}
+head(weight_log)
+```
+
+**We can see all the na values are in the fat column. To preserve the minimal data we have, we will go ahead and remove this column and then remove all na and duplicated values from every dataset.** 
+
+
+
+```{r Clean Data}
+daily_activity <- daily_activity %>% 
+  distinct() %>% 
+  drop_na()
+daily_sleep <- daily_sleep %>% 
+  distinct() %>% 
+  drop_na()
+weight_log <- weight_log %>% 
+  distinct()
+weight_log$Fat <- as.character(weight_log$Fat)
+weight_log <- select(weight_log, -Fat)
+```
+
+
+**Time to format the date and time columns. This will allow us to manipulate the date and times for better analysis.**
+
+
+
+```{r Format Date}
+daily_activity <- daily_activity %>% 
+  rename(Date = ActivityDate)
+daily_sleep <- daily_sleep %>% 
+  rename(Date = SleepDay)
+daily_activity$Date=as.POSIXct(daily_activity$Date, format = "%m/%d/%Y", tz=Sys.timezone())
+daily_sleep$Date=as.POSIXct(daily_sleep$Date, format = "%m/%d/%Y %I:%M:%S %p", tz=Sys.timezone())
+```
+
+
+**Let's make sure that worked.** 
+
+
+```{r Verify Date}
+class(daily_activity$Date)
+class(daily_sleep$Date)
+```
+
+
+**Double check all the date columns have the same name.**
+
+
+```{r Column Check}
+colnames(daily_activity)
+colnames(daily_sleep)
+colnames(weight_log)
+```
+
+# 4. Analyze and Share Phases
+
+### Activity Group Distribution
+
+  Here we will divide the Fitbit users in three activity groups using the daily_activity dataset. These groups will consist of high, moderate, and low and will be grouped based on the sum of their very_active minutes throughout the entire 31 days. The groups will be separated using the recommended 150 minutes of exercise each week provided by Mayo Clinic: 
+  
+  - High > 600 total minutes 
+  - Moderate >= 300 <= 600 total minnutes 
+  - Low < 300 total minutes
+
+  Having this breakdown will help us understand if these participants are using their products in a high, moderate, or low lifestyle and the different trends between lifestyles. 
+  
+  
+```{r Group Creation and Plot}
+# Create a different dataframe that consists of the sum of all the different activity levels for easier manipulation.
+
+different_uses <- daily_activity %>% 
+  group_by(Id) %>% 
+  summarize(Very_Active=sum(VeryActiveMinutes),
+            Fairly_active=sum(FairlyActiveMinutes),
+            Lightly_Active=sum(LightlyActiveMinutes),
+            Sedentary=sum(SedentaryMinutes))
+
+# Create the next dataframe that will be used to create the percent spread of the groups. 
+
+activity_levels <- different_uses %>% 
+  mutate(Active_Level = case_when(
+    different_uses$Very_Active > 600 ~ "High",
+    different_uses$Very_Active >= 300 & different_uses$Very_Active <= 600 ~ "Moderate",
+    different_uses$Very_Active < 300 ~ "Low")) %>% 
+  mutate(Active_Level = factor(Active_Level, levels = c('High', 'Moderate', 'Low'))) %>% 
+  group_by(Active_Level)
+head(activity_levels)
+
+activity_levels2 <- daily_activity %>% 
+  left_join(activity_levels, by = 'Id') %>% 
+  group_by(Active_Level) %>% 
+  summarize(participants = n_distinct(Id)) %>% 
+  mutate(Percent = participants/sum(participants)) %>% 
+  arrange(Percent) %>% 
+  mutate(Percent = scales::percent(Percent))
+head(activity_levels2)
+
+# Now let's create the pie chart comparing the group sizes. 
+
+ggplot(activity_levels2, aes(fill=Active_Level, y=participants, x="")) +
+  geom_bar(stat="identity", width=1, color="black") +
+  coord_polar("y", start=0) +
+  scale_fill_brewer(palette='Set1') + 
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+    plot.title=element_text(size=15, face="bold", hjust=0.5, vjust=-2)) +
+  geom_text(aes(label=Percent, x=1), position = position_stack(vjust=0.5)) +
+  labs(title="Activity Levels Distribution") +
+  guides(fill = guide_legend(title="Activity Level")) 
+
+```
+
+Observations of the Groups 
+
+  - 52% of users lead a low activity lifestyle.
+  - 33% of users lead a high activity lifestyle.
+  - 15% of users lead a moderate activity lifestyle. 
+
+A large majority of the participants that use Bellabeat products tend to lead a lower activity lifestyle. I believe this represents the overall general population. Leading a high activity lifestyle requires dedication and time that is impacted my many different independent variables.
+
+
+### Let's see what days have the highest activity levels. 
+
+```{r Most Active Days}
+
+# Join the datasets and turn the dates into days.
+
+days_used <- daily_activity %>% 
+  left_join(activity_levels, by='Id') %>% 
+  mutate(day=format(ymd(Date), format='%a')) %>% 
+  mutate(total_activity = VeryActiveMinutes+FairlyActiveMinutes+LightlyActiveMinutes) 
+head(days_used)
+
+# Create the dataframe that will be used to plot the activity levels by day.
+
+highest_days <- days_used %>% 
+  group_by(day) %>% 
+  summarize(mean_activity = round(mean(total_activity))) %>%  
+  mutate(day = factor(day, level = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')))
+head(highest_days)
+
+# Plot the activity levels by day.
+
+ggplot(highest_days, aes(x=day, y=mean_activity, fill=mean_activity)) +
+  geom_col(color="darkblue", size=0.1) +
+  labs(title=("Average Activity Minutes"), subtitle=('By Day'), x="", y="Total Minutes") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=14, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9)) +
+  guides(fill = guide_colourbar(barwidth=2))
+```
+
+
+Observations of daily activity:
+
+  - Saturdays are the most active day of the week, followed closely by Fridays and Tuesdays, with the rest of the weekdays being relatively close.
+  - Sundays are the lowest and are presumable used as a rest day. 
+  
+### Let's compare the total distance traveled by the different groups each day.
+
+```{r Distance Comparison}
+
+# Create the dataframe used for the comparison.
+
+total_distance <- days_used %>% 
+  group_by(day, Active_Level) %>% 
+  summarize(sum_distance = sum(TotalDistance)) %>% 
+  mutate(day = factor(day, level = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')))
+head(total_distance)
+
+# Plot the difference 
+         
+ggplot(total_distance, aes(x=day, y=sum_distance, fill=Active_Level)) +
+  geom_col() +
+  labs(title = ("Total Distance Traveled"), subtitle=('By Day and Group'), x="", y="Distance (Km)") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) +
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=14, r=10, b=0, l=0))) +
+  theme(legend.title=element_text(size=12))
+```
+
+
+ Observations of distance:
+
+  - As expected, the total distance traveled by the high activity lifestyle group is the highest out of all the groups consistently. 
+  - Contrary to the most minutes active being on Saturday, the most distance traveled by all groups occurs of Tuesdays, followed by most week days. This is most likely attributed to the participants going to work and then to the gym (or back home) afterwards. 
+
+### Now, let's take a look at the calorie data. 
+
+```{r Calories }
+
+# Create the dataframe to be used in the daily calories plot.
+
+calories <- days_used %>% 
+  group_by(day) %>% 
+  summarize(mean_calories = round(mean(Calories))) %>% 
+  mutate(day = factor(day, level = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')))
+head(calories)
+
+# Plot the average calories that are burned each day.
+
+ggplot(calories, aes(x=day, y=mean_calories, fill=mean_calories)) +
+  geom_col(color="darkblue") +
+  labs(title = ("Average Calories Burnt"), subtitle = ("By Day"), x="", y="Calories") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=14, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9)) +
+  guides(fill = guide_colourbar(barwidth=2))
+
+# Group the calories data by activity level. 
+
+group_calories <- days_used %>% 
+  group_by(day, Active_Level) %>% 
+  summarize(sum_calories = sum(Calories)) %>% 
+  mutate(day = factor(day, level = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')))
+head(group_calories)
+
+# Plot the calories burned by each group.
+
+ggplot(group_calories, aes(x=day, y=sum_calories, fill=Active_Level)) +
+  geom_col() +
+  labs(title=("Calories Burnt"), subtitle=("By Day and Group"), x="", y="Calories") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=14, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9))
+
+```
+
+Calories observations:
+
+  - For the most part, the average amount of calories burnt each day coincides with the activity levels by day. 
+  - Calories burnt by group seem to coincide with their activity level when accouting for the proportion size of each group (i.e. the highly active group burns a sizeable portion of the calories even though they only account for 33% of the users).
+  - The weekdays consist of the highest calories burnt. This is once again most likely because of everyone going to work and being more active during the week regardless of activity group.
+  
+### Now, let's take a look at the sleep data that was provided.
+
+```{r Sleep usage}
+
+# Check how many people recorded their sleep, and how often they did over the 31 days.
+
+sleep_users <- daily_sleep %>% 
+  group_by(Id) %>% 
+  summarize(days_used = sum(n())) %>% 
+  mutate(Percent = days_used/31) %>% 
+  mutate(Percent = scales::percent(Percent))
+head(sleep_users)
+```
+
+
+  **Out of the 33 users, only 24 of them recorded at least one night of sleep. From this group, not everyone recorded their sleep every night. From the start, we know this dataset is limited, but may provide some valuable insight from the people who did use it.**
+  
+  
+  
+```{r Sleep Quality}
+
+# Let's check the sleep quality of the participants. We will base sleep quality on the 7-9 recommended hours of sleep by the National Sleep Foundation.
+
+sleep_day <- daily_sleep %>% 
+  select(TotalMinutesAsleep) %>% 
+  drop_na() %>% 
+  mutate(sleep_quality =  ifelse(TotalMinutesAsleep < 420, 'Below Recommended',
+                          ifelse(TotalMinutesAsleep <=540, 'Recommended',
+                          no = 'Above Recommended')))%>% 
+  mutate(sleep_quality = factor(sleep_quality, level = c('Below Recommended', 'Recommended', 'Above Recommended')))
+head(sleep_day)
+
+# Plot the sleep quality spread.
+
+ggplot(sleep_day, aes(x=TotalMinutesAsleep, fill=sleep_quality)) +
+  geom_area(stat="bin", binwidth=5) +
+  labs(title=("Sleep Quality"), x =("Total Minutes Asleep"), y="")+
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=10, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9))
+```
+
+
+Sleep quality observations:
+
+  - Overall, a majority of users are getting below the recommended amount of sleep, but it should be noted that there is a large chunk getting between 6-9 hours of sleep a night. 
+  - More people tend to undersleep than they do oversleep. 
+  
+### Now, we will compare the sleeping habits by day and group.
+
+```{r Sleep Habits}
+
+# Create the dataframe that will be used for plotting the hours of sleep each day.
+
+sleep_habits <- daily_sleep %>% 
+  mutate(day = format(ymd(Date), format = '%a')) %>% 
+  mutate(awake_in_bed = TotalTimeInBed - TotalMinutesAsleep) %>% 
+  group_by(day) %>% 
+  summarize(avg_sleep_hrs = round(mean(TotalMinutesAsleep/60),2),
+            avg_awakeinbed_hrs = round(mean(awake_in_bed/60),2),
+            inbed_avg_hrs = round(mean(TotalTimeInBed/60),2)) %>% 
+  mutate(day = factor(day, level = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')))
+head(sleep_habits)
+
+# Plot the hours of sleep by day.
+
+ggplot(sleep_habits, aes(x=day, y=avg_sleep_hrs, fill=avg_sleep_hrs)) +
+  geom_col() +
+  geom_text(aes(label = avg_sleep_hrs, y=1), position=position_dodge(1), color="White") +
+  labs(title=("Daily Sleep Average"), x="", y="Hours") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=10, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9))
+
+# Create the dataframe that separates the sleep hours into groups and days.
+
+group_sleep <- daily_sleep %>%
+  left_join(activity_levels, by="Id") %>% 
+  mutate(day = format(ymd(Date), format = '%a')) %>% 
+  mutate(awake_in_bed = TotalTimeInBed - TotalMinutesAsleep) %>% 
+  group_by(Active_Level,day) %>% 
+  summarize(avg_sleep_hrs = round(mean(TotalMinutesAsleep/60),2),
+            avg_awakeinbed_hrs = round(mean(awake_in_bed/60),2),
+            inbed_avg_hrs = round(mean(TotalTimeInBed/60),2)) %>% 
+  mutate(day = factor(day, level = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')))
+head(group_sleep)
+
+# Plot the hours slept by day and by each activity group.
+
+ggplot(group_sleep, aes(x=day, y=avg_sleep_hrs, fill=avg_sleep_hrs)) +
+  geom_col() +
+  facet_grid(~Active_Level) +
+  labs(title=("Average Hours of Sleep"), subtitle=("By Day and Group"), x="", y="Hours") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=9, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=14, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9))
+```
+
+
+
+Sleeping habits Observations:
+
+  - Thursdays are shown to have the lowest amount of sleep, while Sundays result in the highest amount of sleep.
+  - Wednesdays have the highest amount of sleep during the week. This could be the result of the participants trying to recover after a busy first half of the work week.
+  - When comparing the three groups, it is of note that the moderate group has the lowest average sleep across the board. This could be due to sample size and a low participation in the sleep data.
+  - Between the high and low groups, it seems the low group tends to get more sleep on average than the high group. One possible reason could be the high group making time for more physical activity.
+  
+### Let's compare how many nights the product was worn to bed by group.
+
+```{r Number of nights}
+
+# Create the dataframe that will be used for comparing the groups.
+
+sleep_merged <- activity_levels %>% 
+  left_join(sleep_users, by='Id') %>% 
+  group_by(Id) 
+head(sleep_merged)
+
+sleep_active <- sleep_merged %>% 
+  drop_na() %>% 
+  group_by(Active_Level) %>% 
+  summarize(total_days_used = sum(days_used))
+head(sleep_active)
+
+# Plot the difference between groups.
+
+ggplot(sleep_active, aes(x=Active_Level, y=total_days_used, fill=Active_Level)) +
+  geom_col() +
+  scale_fill_manual(values = c("High" = "red",
+                    "Moderate" = "blue",
+                    "Low" = "green")) +
+  labs(title=("Total Nights Worn Asleep"), subtitle=("By Active Levels"), x="", y=("Nights Worn")) +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=10, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9))
+```
+
+
+
+Observations:
+
+  - The high activity group wore their product to bed the most out of the groups, followed closely by the low activity group.
+  - The moderate group has a significantly lower rate of wearing their product to bed. 
+
+### Weight Data
+
+  **Here we will take a look at the BMI of the participants who used the weight feature. It is already known that only 8 of the 33 people participated in this feature so the data will be very limited. However, we will take a look at the data anyways to see if there are any possible trends that we may be able to distinguish. **
+  
+```{r Weight Classes}
+
+# We need to create a dataframe to enable us to separate the participants into different weight categories. 
+
+bmi <- weight_log %>% 
+  group_by(Id) %>% 
+  summarize(avg_bmi = round(mean(BMI),2))
+
+# Here we are separating the participants based on their weight categories. These categories are taken from the BMI index chart provided by the CDC.
+
+weight <- bmi %>% 
+  mutate(weight_class = case_when(
+    bmi$avg_bmi < 18.5 ~ "Underweight",
+    bmi$avg_bmi>= 18.5 & bmi$avg_bmi<= 24.9 ~ "Healthy",
+    bmi$avg_bmi >= 24.9 & bmi$avg_bmi <= 29.9 ~ "Overweight",
+    bmi$avg_bmi > 30 ~ "Obese")) %>% 
+  mutate(weight_class = factor(weight_class, level=c('Underweight', 'Healthy', 'Overweight', 'Obese'))) %>% 
+  group_by(weight_class)
+head(weight)
+
+
+
+weight2 <- weight_log %>% 
+  left_join(weight, by = 'Id') %>% 
+  group_by(weight_class) %>% 
+  summarize(participants = n_distinct(Id)) %>% 
+  mutate(Percent = participants/sum(participants)) %>% 
+  arrange(Percent) %>% 
+  mutate(Percent = scales::percent(Percent))
+head(weight2)
+
+# Creating a pie chart of the weight classes to show distribution.
+
+ggplot(weight2, aes(fill=weight_class, y=participants, x="")) +
+  geom_bar(stat="identity", width=1, color="black") +
+  coord_polar("y", start=0) +
+  scale_fill_brewer(palette='Set1') + 
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+        plot.subtitle=element_text(size=12, hjust=0.5, vjust=-4), 
+        plot.title=element_text(size=15, hjust=0.5, face="bold", vjust=-2))+
+  geom_text(aes(label=Percent, x=1), position = position_stack(vjust=0.5)) +
+  labs(title="Weight Class", subtitle="Of 8 Participants") +
+  guides(fill = guide_legend(title="Weigth Class"))
+```
+
+
+
+Weigth class observations:
+
+  - Half of the 8 participants are classified as overweight, by far the largest margin.
+  - 38% of the participants are classified as healthy, followed by 12% as being obese. 
+  - Out of the 8 people, there are none that are underweight. However, it should be noted that there is a tendency to lean towards having a BMI that is considered higher than healthy. 
+  
+### Weight Class by Activity Levels
+
+```{r Weight and activity}
+
+# Join the weight class and activity levels dataframes to allow for plotting of the comparison.
+
+act_weight <- activity_levels %>% 
+  left_join(weight, by='Id') 
+head(act_weight)
+
+act_weight2 <- act_weight %>% 
+  select(weight_class) %>% 
+  drop_na() %>% 
+  group_by(Active_Level) 
+head(act_weight2)
+
+# Plot the comparison.
+
+ggplot(act_weight2, aes(x=Active_Level, fill=weight_class)) +
+  geom_bar() +
+  labs(title=("Weight Class Distribution"), subtitle=("By Activity Level"), x="", y="Count") +
+  theme(plot.title=element_text(size=18, hjust=0.5)) + 
+  theme(plot.subtitle=element_text(size=16, hjust=0.5)) +
+  theme(axis.text.y=element_text(size=14)) +
+  theme(axis.text.x=element_text(size=14, hjust=0.5)) +
+  theme(axis.title.y=element_text(margin = margin(t=0, r=10, b=0, l=0))) +
+  theme(axis.title.x=element_text(margin = margin(t=10, r=0, b=0, l=0))) +
+  theme(legend.position = "right") +
+  theme(legend.title=element_text(size=12)) +
+  theme(legend.text=element_text(size=9))
+
+```
+
+
+
+Observations of weight class and activity levels:
+
+  - The high activity level group consists of two overweight and two healthy individuals. The two overweight individuals may be using this product to better improve their health and lifestyles.
+  
+# 5. Act Phase  
+  
+## Overall Observations and Discussion
+
+
+### What are trends seen in the usage and different groups of the product?
+
+  The overall majority of people who use Bellabeat products lead a low activity lifestyle, with the overall minority of people who use Bellabeat products leading a moderate lifestyle. Out of the 33 participants, 25 of them used their product to monitor their sleep and only 8 of them used it to monitor their weight. Even though not everyone used the different features, these were analyzed anyway to gather any possible trends between the different groups.
+  
+
+### High Activity Group
+
+  Between the three groups, it is seen that the high activity lifestyle group used their product more thoroughly, meaning that they seem to have incorporated the Bellabeat products into their healthy lifsetyle. These people could also be using thei Bellabeat products as a means to change their lifestyle to lead a better and healthier life. It seems that they may be the most satisfied with the product they are using. 
+  
+  
+### Moderate Activity Group
+
+  The moderate activity group seems to have the lowest participation rate among the different features offered by the Bellabeat products and is the smallest group of the three. This could be that they do not fully understand the capabilities and features of the products, however it could also be that they have no desire to track their health. These people could also be in the intermediary phase of going from a low activity lifestyle to a higher activity lifestyle. More information would be beneficial to fully understand why this group does not use the multiple features offered by Bellabeat products.
+  
+  
+### Low Activity Group
+
+  This is the largest group of the three and is similar to the high activity group in that they seem to use the multiple features more often than not. These participants are most likely the average day person that may not have the time or ability to lead a more active lifestyle. However, they seem to be interested in monitoring their health and lifestyle they live now to be able to maximize their health in their own means. 
+  
+  
+### Data Limitations
+
+  Due to the large data gaps between the different features, it is worth noting that these observations should not be looked at as final. More data collected from more participants and of the different features is needed to create a better analysis.
+  
+  
+# Recommendations
+
+
+### Meant for Everyone
+
+
+  Focus needs to be placed on the moderate activity group to better understand why they are not using the many different features offered bythe Bellabeat product. It seems that the highly active and the more sedentary lifestyles understand the capabilities of the product as compared to the moderate group. I suggest that Bellabeat focus their marketing towards the moderate group. This could help them capitalize on the people looking to improve their health and lifestyle, but could also increase the understanding of their product to those who already have them. There should also be a focus on making it clear that the Bellabeat products are not just for the super active people, but are for everyone to better understand their own health. 
+  
+  
+### Wearability 
+
+  A possible reason that not everyone seems to use every feature could be the comfortability of their products. Another possibility could be that the battery life does not allow for the users to use their products more often. A survey should be conducted for every Bellabeat product to get a better understanding of why users are not maximizing their product.
+  
+  
+### Additional Features
+
+  To increase the likelihood of drawing in more interest and retaining the current consumers, more features can and should be implemented. Features could include:
+  
+  - Some sort of socialization feature to allow for all the users to interact with each other.
+  - Features that allow for people to see how they rank amongst other users. These can also include notifications at the end of the day to update the users on if they reached certain basic milestones (i.e. taking the recommended amount of steps a day or reaching the recommended amount of activity a week).
+  - Increase the battery life and comfortability of the products.
+  - Expand your product line up to appeal to a wider variety of people. 
+  - Offer advice and tips on what can be done to improve one's lifestyle, along with encouraging healthy habits already being done.
+  
+
+# Conclusion
+
+  There is a very clear difference in the usage of Bellabeat products between different active lifestyles. In order to better understand these differences, more thorough data is required. While collecting the new data, I suggest Bellabeat take action based on the findings of this project. Another analysis of future data will be conducted to further advise and direct Bellabeat in the future. 
+
+
+
+
+
+
+
