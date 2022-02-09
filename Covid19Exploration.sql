@@ -1,7 +1,8 @@
 -- Written By: Christian Caredio
 -- Date: 02/02/2022
 -- Purpose: The purpose of this project was to take Covid-19 data from ourworldindata.org and explore it. I will then take the data 
--- and create a dashboard in Tableau to visualize it. 
+-- and create a dashboard in Tableau to visualize it. The dashboard created for this project is available via my tableua public 
+-- profile: https://public.tableau.com/app/profile/christian.caredio/viz/CovidDashboard_16440050798360/Dashboard1
 
 
 
